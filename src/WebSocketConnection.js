@@ -5,58 +5,58 @@ const WS_URL = 'ws://192.168.11.12:64201';
 function WebSocketConnection({ controller_input }) {
   const wsRef = useRef(null);
   const reconnectTimer = useRef(null);
+  const intervalRef = useRef(null);
 
   const inputRef = useRef(controller_input);
 
   const [connected, setConnected] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0, r: 0 });
 
-  // =========================
-  // Publish（ROSの代替）
-  // =========================
-  const Publish = (x, y, rot) => {
-    if (!connected || !wsRef.current) return;
-
-    const msg = {
-      type: "cmd_vel",
-      linear: {
-        x: x,
-        y: y,
-        z: 0.0
-      },
-      angular: {
-        x: 0.0,
-        y: 0.0,
-        z: rot
-      }
-    };
-
-    wsRef.current.send(JSON.stringify(msg));
-  };
-
-  // controller_input更新
+  // 最新入力を保持
   useEffect(() => {
     inputRef.current = controller_input;
   }, [controller_input]);
 
-  // =========================
-  // WebSocket接続
-  // =========================
   useEffect(() => {
+    let isMounted = true;
+
     const connect = () => {
+      console.log("connecting...");
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        setConnected(true);
+        if (!isMounted) return;
+
         console.log("WebSocket connected");
+        setConnected(true);
+
+        // 既存intervalがあれば止める
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+        }
+
+        intervalRef.current = setInterval(() => {
+          const socket = wsRef.current;
+
+          if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+          const { lx, ly, rx } = inputRef.current;
+
+          const msg = {
+            type: "cmd_vel",
+            linear: { x: lx, y: ly, z: 0.0 },
+            angular: { x: 0.0, y: 0.0, z: rx }
+          };
+
+          socket.send(JSON.stringify(msg));
+        }, 50); // ← 10msは重すぎるので50ms推奨
       };
 
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
 
-          // フィードバック（ROSのsubscribe代替）
           if (msg.type === "position") {
             setPosition({
               x: msg.x,
@@ -71,38 +71,44 @@ function WebSocketConnection({ controller_input }) {
 
       ws.onerror = (err) => {
         console.error("WebSocket error", err);
+        ws.close(); // ← これ重要
       };
 
       ws.onclose = () => {
         console.warn("WebSocket disconnected");
         setConnected(false);
 
-        reconnectTimer.current = setTimeout(connect, 3000);
+        // interval停止
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+
+        // 再接続
+        if (isMounted) {
+          reconnectTimer.current = setTimeout(connect, 1000);
+        }
       };
     };
 
     connect();
 
     return () => {
-      if (wsRef.current) wsRef.current.close();
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      isMounted = false;
+
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+      }
+
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
     };
   }, []);
-
-  // =========================
-  // 送信ループ（10ms）
-  // =========================
-  useEffect(() => {
-    if (!connected) return;
-
-    const id = setInterval(() => {
-      const { lx, ly, rx } = inputRef.current;
-
-      Publish(lx, ly, rx);
-    }, 10);
-
-    return () => clearInterval(id);
-  }, [connected]);
 
   return {
     position,
