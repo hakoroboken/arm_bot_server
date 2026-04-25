@@ -1,5 +1,5 @@
 {
-  "name": "waypoint-create-app",
+  "name": "arm_bot_server",
   "version": "0.1.0",
   "private": true,
   "dependencies": {
