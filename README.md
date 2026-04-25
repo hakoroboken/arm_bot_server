@@ -13,5 +13,5 @@ npm install react
 ```
 
 ```
-npm start
+./start.sh
 ```
