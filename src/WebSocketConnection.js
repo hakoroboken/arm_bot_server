@@ -44,13 +44,11 @@ function WebSocketConnection({ controller_input }) {
           const { lx, ly, rx } = inputRef.current;
 
           const msg = {
-            type: "cmd_vel",
-            linear: { x: lx, y: ly, z: 0.0 },
-            angular: { x: 0.0, y: 0.0, z: rx }
+            x: lx, y: ly, rot: rx
           };
 
           socket.send(JSON.stringify(msg));
-        }, 50); // ← 10msは重すぎるので50ms推奨
+        }, 20);
       };
 
       ws.onmessage = (event) => {
